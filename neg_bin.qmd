@@ -25,4 +25,4 @@ The value of the mean is `r mu` and of the variance is `r vari` .
 
 ## Steps
 
-I used the function rnbinom with size = dispersion = 2 and mean as indicated (10). The empirical mean and variance were {{< var mu >}} and {{< var vari >}} respectively.
+I used the function rnbinom with size = 1/dispersion = 0.5 and mean as indicated, 10. For in line printing I used \`\` with r in between and then the variable name.
