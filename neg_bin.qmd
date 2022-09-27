@@ -1,0 +1,28 @@
+---
+title: "Negative binomial"
+author: "Maya Louage"
+format: html
+editor: visual
+---
+
+```{r}
+#| label: sample from negative binomial
+samples = rnbinom(100, size = 1/2, mu = 10)
+hist(samples)
+hist(log(samples+1))
+```
+
+```{r}
+#| include: false
+#| label: compute mean and var
+mu = mean(samples)
+vari = var(samples)
+#print(paste("The value of the mean is ", mu))
+
+```
+
+The value of the mean is `r mu` and of the variance is `r vari` .
+
+## Steps
+
+I used the function rnbinom with size = dispersion = 2 and mean as indicated (10). The empirical mean and variance were {{< var mu >}} and {{< var vari >}} respectively.
