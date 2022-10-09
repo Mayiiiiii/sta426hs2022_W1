@@ -1,0 +1,156 @@
+---
+title: "W3_ex"
+format: html
+editor: visual
+---
+
+```{r}
+library(ggplot2)
+x = readRDS("counts.RDS")
+anno = readRDS("phenodata.RDS")
+head(anno)
+```
+
+How many replicates are there for each combination of factor levels?
+
+```{r}
+#aggregate(count ~ ., data = anno, FUN = sum)
+comb_counts = as.data.frame(table(anno[,1:2]))
+```
+
+How many genes have an expression value above 0 in each sample?
+
+```{r}
+col_sum = as.matrix(colSums(x>0))
+row_sum = as.matrix(rowSums(x>0))
+which(row_sum == nrow(x)) #How many genes are expressed in all samples?
+```
+
+**Are there systematic differences between the samples in the different conditions (treatment & technology)?**
+
+See if can group x by anno and then make heatmap
+
+number of detected genes
+
+```{r}
+plot(col_sum, main = 'Number of detected genes per sample', xlab = 'Sample', ylab = '#')
+```
+
+total sum of counts per sample (serves as a proxy for the number of sequenced reads per sample)
+
+```{r}
+plot(colSums(x), main = 'Total read count per sample', xlab = 'Sample', ylab = 'Total read count over all genes')
+```
+
+Color the samples by the experimental condition.
+
+In anno, plot the samples vs how many genes it is expressing and colour by treatment.
+
+```{r}
+#ggplot(anno, aes(x=Treament, y=Technology, colour=interaction(Treatment,Technology,sep="-",lex.order=TRUE)))
+#pie(comb_counts['Freq'], labels = )
+#anno$indx <- row.names(anno)
+trt_count = cbind(col_sum, anno)
+#barplot(trt_count$col_sum, col = trt_count$Treatment)
+trt_count$indx <- row.names(trt_count)
+ggplot(data = trt_count, aes(x = indx, y= col_sum, fill = Treatment)) + geom_bar(stat="identity")
+```
+
+Normalize data (columns of x)
+
+```{r}
+norm = function(df){
+  mean = colMeans(df)
+  std = apply(df, 2, sd) #2 for columns
+  return((df-mean)/std)
+}
+#norm_x = norm(x)
+norm_x = scale(x)
+```
+
+Log transform
+
+```{r}
+log_norm_x = log1p(norm_x) #(log(1+x)) natural log
+
+```
+
+Use violin plots and boxplots to visualize the distribution of the expression values.
+
+```{r}
+library("vioplot")
+vioplot(log_norm_x) #for each sample plots violin plot of expression levels of genes
+
+##vioplot(t(log_norm_x)) #for each gene plots expression levels of all samples TOO MANYYYY
+boxplot(log_norm_x, outline = FALSE) #if draw outliers becomes too overwhelming
+
+# could look into how to angle the x axis labels perpendicular to axis so they fit
+```
+
+Aggregate the replicates in the same experimental group into one average sample, and plot the averaged sample. Color by experimental factors.
+
+```{r}
+#library("dplyr")
+library("tidyverse")
+combined_df = cbind(t(log_norm_x), anno)
+#print(typeof(combined_df[1,1]))
+
+combined_df = as.data.frame(combined_df)
+#print(typeof(combined_df[1,1]))
+
+combined_df$Treatment = factor(combined_df$Treatment)
+combined_df$Technology = factor(combined_df$Technology)
+
+grouped_df = aggregate(combined_df, .~Technology+Treatment, mean)
+#combined_df %>% group_by(Technology, Treatment, .drop = FALSE, .add = FALSE) %>% summarise(mean = rowMeans(combined_df[, setdiff(colnames(combined_df), c("Treatment","Technology"))]))
+  #summarise(mean = colMeans(combined_df[,setdiff(colnames(combined_df), c("Treatme
+```
+
+```{r}
+boxplot(grouped_df)
+violin(grouped_df)
+```
+
+```{nt","Technology"))]))}
+
+```
+
+```{r}
+boxplot(grouped_df)
+violin(grouped_df)
+```
+
+```{}
+```
+
+Identify the 500 most variable genes (with largest variance across samples) and continue working with those
+
+```{r}
+sd_df = apply(x, 1, sd)
+sd_df= as.data.frame(sd_df, row.names = row.names(x))
+most_var_500 = rownames(sd_df)[order(-sd_df$sd_df)[1:500]]
+keep_500 = log_norm_x[most_var_500, ]
+#sd_df = sd_df[order(sd_df$sd_df),]
+#keep_500 = sd_df[1:500, ]
+print(nrow(keep_500))
+```
+
+Compute and visualize the sample-to-sample correlations
+
+```{r}
+sample_corr = cor(keep_500)
+heatmap(sample_corr)
+```
+
+Compute and visualize a hierarchical clustering of the samples, use the method \`hclust\`
+
+```{r}
+clust = hclust(as.dist((1-sample_corr)/2)) #how to justify this
+plot(clust)
+```
+
+Use the package \`pheatmap\` to generate a heatmap of the expression data.
+
+```{r}
+heatmap(keep_500)
+```
