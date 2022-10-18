@@ -1,0 +1,274 @@
+---
+title: "W4_Limma"
+format:
+  html:
+    self-contained: true
+editor: source
+editor_options: 
+  chunk_output_type: console
+execute:
+  output: true
+---
+
+## 
+
+```{r}
+library("limma")
+library("ggplot2")
+set.seed(123)
+nGenes <- 10000                   # number of "features"
+nSamples <- 6                     # number of samples (split equal in 2 groups)
+pDiff <- .1                       # percent of genes "differential 
+grp <- rep(0:1,each=nSamples/2)   # dummy variable for exp. group
+trueFC <- 2                       # log-fold-change of truly DE
+
+d0 <- 1
+s0 <- 0.8
+sd <- s0*sqrt(d0/rchisq(nGenes,df=d0))  # dist'n of s.d.
+```
+
+```{r}
+y <- matrix(rnorm(nGenes*nSamples,sd=sd),
+            nr=nGenes,nc=nSamples)
+indD <- 1:floor(pDiff*nGenes)
+diff <- sample(c(-1,1),max(indD),replace=TRUE)*trueFC
+y[indD,grp==1] <- y[indD,grp==1] + diff
+```
+
+## **Q1: Exploratory data analysis**
+
+```{r}
+row_var0 = apply(y[,grp == 0], 1, var)
+row_var1 = apply(y[,grp == 1], 1, var)
+row_var = apply(y, 1, var)
+
+true_var = sd^2
+plot(log(row_var0), log(true_var), xlab = 'simulated variance group 0', ylab = 'true variance', main = 'Comparing true vs group 0 variance')
+plot(log(row_var1), log(true_var), xlab = 'simulated variance group 1', ylab = 'true variance', main = 'Comparing true vs group 1 variance')
+plot(log(row_var), log(true_var), xlab = 'simulated variance', ylab = 'true variance', main ='Comparing true vs simulated variance')
+
+```
+
+```{r}
+gr1_df = as.data.frame(log(row_var0))
+gr1_df$col = 'gr1'
+gr2_df = as.data.frame(log(row_var1))
+gr2_df$col = 'gr2'
+true_df = as.data.frame(log(true_var))
+true_df$col = 'true_var'
+
+#all_var = rbind(gr1_df, gr2_df)
+#all_var = rbind(all_var, true_df)
+
+ggplot(gr1_df) + 
+  geom_histogram(aes(x=log(row_var0)), bins = 60, fill = 'transparent', color = 'grey') +
+  geom_histogram(data = gr2_df, aes(x=log(row_var1)), bins = 60, fill = 'transparent', color = 'red') + 
+  geom_histogram(data = true_df, aes(x=log(true_var)), bins = 60, fill = 'transparent', color = 'blue', show.legend = T) +
+  labs(x = 'log of variance of group') +
+  scale_fill_manual(name="group",values=c("grey","red", 'blue'),labels=c("1","2", '3'))
+
+#+ legend('group 1', 'group 2')
+```
+
+Note that group 1 and group 2 (grey and red respectively) have a very similar distribution, however the true variance in blue, is similar yet with a fatter right tail.
+
+# Q2: Differential expression
+
+So we shifted the 1000 gene samples of group 1 by +2 or -2 out of 10 000. Hence we should see something similar to a normal distribution around 0, but slight elevation around -2 or +2.
+
+```{r}
+y_df = as.data.frame(y)
+row_gr0_mean = apply(y[, grp==0], 1, mean)
+row_gr1_mean = apply(y[, grp==1], 1, mean)
+row_gr0_mean_df = as.data.frame(row_gr0_mean)
+row_gr1_mean_df = as.data.frame(row_gr1_mean)
+
+plot(row_gr1_mean, row_gr0_mean)
+ggplot(row_gr0_mean_df) + 
+  geom_histogram(aes(x=row_gr0_mean), bins = 60, fill = 'transparent', color = 'blue') +
+  geom_histogram(data = row_gr1_mean_df, aes(x=row_gr1_mean), bins = 60, fill = 'transparent', color = 'red') + 
+  scale_x_continuous(limits=c(-5,5),breaks=c(-5, -2, 0, 2, 5))
+```
+
+The tails of the group 1 distribution are more fat (red), can even see a slight elevation around -2 and +2, so point proven. I zoomed in on the x-axis so these bulges would be visible on the plot.
+
+```{r}
+(design <- model.matrix(~grp))
+
+```
+
+# Q3: meaning of columns in design matrix
+
+The group is a categorical variable, it tells you which column in y (or row in the design matrix) is associated with this group. Intercept being one means we are fitting an intercept term in our model.
+
+```{r}
+fit <- lmFit(y,design)
+fit <- eBayes(fit)
+
+names(fit)
+summary(fit)
+```
+
+```{r}
+cols <- rep("non-differential",nrow(y))
+cols[indD] <- "differential"
+
+qplot(y=fit$t[,2]) + geom_point(aes(colour=cols)) 
+```
+
+# Q4: t-test for column of y
+
+```{r}
+ts_unpaired = function(y){
+  return(t.test(y[grp == 0], y[grp == 1])$statistic)
+}
+
+t_tests2 = apply(y, 1, ts_unpaired)
+qplot(y=t_tests2) + geom_point(aes(colour=cols)) 
+```
+
+```{r}
+diff_row_groups = log(abs(row_gr1_mean_df - row_gr0_mean_df))
+div_row_groups = log(abs(row_gr1_mean_df / row_gr0_mean_df))
+
+qplot(y=as.numeric(div_row_groups$row_gr1_mean)) + geom_point(aes(colour=cols)) + ylab('difference between group 1 and group 0 per row mean') #+ scale_y_continuous(limits=c(-10,10))
+
+#qplot(y=as.numeric(div_row_groups$row_gr1_mean)) + geom_point(aes(colour=cols)) + ylab('log(abs(ratio between group 1 and group 0 per row mean')
+```
+
+```{r}
+library(ggpubr)
+limma_plot = qplot(y=fit$t[,2]) + geom_point(aes(colour=cols)) + ylab('limma t statistic')
+t_test_plot = qplot(y=t_tests2) + geom_point(aes(colour=cols)) + ylab('standard t statistic')
+mean_diff_plot = qplot(y=as.numeric(div_row_groups$row_gr1_mean)) + geom_point(aes(colour=cols)) + ylab('difference between grp 1 \n and grp 0 per row mean') #+ scale_y_continuous(limits=c(-10,10))
+
+figure <- ggarrange(limma_plot, t_test_plot, mean_diff_plot,
+                    labels = c("A", "B", "C"),
+                    ncol = 1, nrow = 3)
+figure
+```
+
+# Q5: Metric to compare methods
+
+ROC curve
+
+```{r}
+library(ROCR)
+
+ts_unpaired_null = function(y){
+  return(t.test(y[grp == 0], y[grp == 1])$p.value)
+}
+
+t_tests_null = apply(y, 1, ts_unpaired_null)
+cols_test = rep(1, nrow(y))
+p_val = 1e-1
+cols_test[t_tests_null < p_val] = 1
+cols_test[t_tests_null >= p_val] = 0
+cols_binary = rep(1, nrow(y))
+cols_binary[cols == 'differential'] = 1
+cols_binary[cols == 'non-differential'] = 0
+
+#qplot(y=t_tests_null) + geom_point(aes(colour=cols)) 
+```
+
+```{r}
+#par(mfrow = c(1,3))
+pred <- prediction(abs(t_tests2), cols=='differential')
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+plot(perf, col='black', main = 'ROC curve')
+
+pred <- prediction(abs(fit$t[,2]), cols== 'differential')
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+plot(perf, col='red', add = TRUE)
+
+pred <- prediction((diff_row_groups), cols== 'differential')
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+plot(perf, col='blue', add = TRUE)
+
+legend(x = "topleft", legend=c("Manual t test", "Limma t test", "Log fold change"), fill = c("black", "red","blue"))
+#pred <- prediction(fit$coef[,2], cols== 'differential')
+#perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+#plot(perf, col='pink', add = TRUE)
+
+```
+
+From this I conclude that I would use the Limma t-test.
+
+# Q6
+
+```{r}
+library("affy")
+library("preprocessCore")
+unzip("affy_estrogen.zip")
+ddir <- "affy_estrogen"
+dir(ddir)
+
+# preprocess affymetrix data
+targets <- readTargets("targets.txt", path=ddir)
+targets$time.h <- factor(targets$time.h)
+targets
+
+abatch <- ReadAffy(filenames=targets$filename,
+                   celfile.path=ddir)
+eset <- rma(abatch)  # bg correct, normalize, summarize
+
+mds <- plotMDS( exprs(eset), plot = FALSE)  # MDS plot
+qplot(x=mds$x, mds$y) + 
+  geom_point(aes(shape=targets$estrogen, 
+                 colour=targets$time.h), size=4)
+
+# do the limma modeling
+f <- paste(targets$estrogen,targets$time.h,sep="")
+f <- factor(f)
+
+# create design matrix
+design <- model.matrix(~0+f)
+colnames(design) <- levels(f)
+design
+
+fit <- lmFit(eset, design)
+
+cont.matrix <- makeContrasts(E10="present10-absent10",
+                             E48="present48-absent48",
+                             Time="absent48-absent10",levels=design)
+cont.matrix
+
+fit2  <- contrasts.fit(fit, cont.matrix)
+fit2  <- eBayes(fit2)
+class(fit2)
+
+names(fit2)
+
+topTable(fit2, coef=1, n=5)
+
+topTable(fit2, coef=2, n=5)
+
+topTable(fit2, coef=3, n=5)
+
+
+qplot(x=f, y=exprs(eset)["39642_at",],) + 
+  geom_point(aes(shape=targets$estrogen, 
+                 colour=targets$time.h), size=4)
+```
+
+After design matrix it may make sense to filter out control probesets or remove lowly expressed genes.
+
+ANSWER
+
+```{r}
+aff_dat = exprs(eset)
+#910_at present48-absent48
+at_910 = aff_dat['910_at', ]
+logFC_2 = (at_910['high48-2.cel']+at_910['high48-1.cel'])/2 - (at_910['low48-2.cel']+at_910['low48-1.cel'])/2
+logFC_2
+
+logFC_1 = (at_910['high10-2.cel']+at_910['high10-1.cel'])/2 - (at_910['low10-2.cel']+at_910['low10-1.cel'])/2
+logFC_1
+
+logFC_3 = (at_910['low48-2.cel']+at_910['low48-1.cel'])/2 - (at_910['low10-2.cel']+at_910['low10-1.cel'])/2
+logFC_3
+
+ave_expr = mean(at_910)
+```
+
+These values are the same as for the second contrast in toptable view found above :).
